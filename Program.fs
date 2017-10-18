@@ -25,7 +25,7 @@ module GiraffeExample.App
   type SimpleClaim = { Type: string; Value: string }
   type Token = { access_token: string; expires_in: int }
 
-  let secretKey = "secret"
+  let secretKey = "mysupersecret_secretkey!123"
   let signingKey = SymmetricSecurityKey(Encoding.ASCII.GetBytes(secretKey))
   let signingCredentials =
     SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256)
@@ -85,9 +85,9 @@ module GiraffeExample.App
             access_token = encodedJwt
             expires_in = int (TimeSpan(14,0,0,0).TotalSeconds)
           }
-        ctx.Response.ContentType <- "application/json"
-        ctx.Response.WriteAsync(JsonConvert.SerializeObject(resp)).Wait()
-        next ctx
+        // ctx.Response.ContentType <- "application/json"
+        // ctx.Response.WriteAsync(JsonConvert.SerializeObject(resp)).Wait()
+        json resp next ctx
 
   let webApp =
     choose [
@@ -96,6 +96,9 @@ module GiraffeExample.App
           route "/" >=> text "Public endpoint."
           route "/greet" >=> authorize >=> greet
           route "/claims" >=> authorize >=> showClaims
+        ]
+      POST >=>
+        choose [
           route "/token" >=> token
         ]
       setStatusCode 404 >=> text "Not Found" ]
@@ -125,7 +128,7 @@ module GiraffeExample.App
   let jwtBearerOptions (cfg : JwtBearerOptions) =
     cfg.SaveToken <- true
     cfg.IncludeErrorDetails <- true
-    cfg.Authority <- "https://localhost:5000"
+    // cfg.Authority <- "https://localhost:5000"
     cfg.Audience <- "GiraffeExampleAudience"
     cfg.TokenValidationParameters <- TokenValidationParameters (
       ValidIssuer = "GiraffeExample"
