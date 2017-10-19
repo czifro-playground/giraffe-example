@@ -5,6 +5,7 @@ module GiraffeExample.App
   open System.IO
   open System.Security.Claims
   open System.Text
+  open System.Security.Cryptography
   open System.IdentityModel.Tokens.Jwt
   open Microsoft.AspNetCore.Authentication
   open Microsoft.AspNetCore.Authentication.JwtBearer
@@ -45,7 +46,7 @@ module GiraffeExample.App
       let simpleClaims = Seq.map (fun (i : Claim) -> {Type = i.Type; Value = i.Value}) claims
       json simpleClaims next ctx
 
-  let token : (HttpFunc -> HttpContext -> HttpFuncResult) =
+  let token =
     fun (next : HttpFunc) (ctx : HttpContext) ->
       if not (ctx.Request.Form.ContainsKey("username")) ||
         not (ctx.Request.Form.ContainsKey("password")) then
@@ -66,6 +67,7 @@ module GiraffeExample.App
         let claims =
           [
             Claim(JwtRegisteredClaimNames.Sub, username)
+            Claim("name", username)
             Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString())
           ]
@@ -85,9 +87,24 @@ module GiraffeExample.App
             access_token = encodedJwt
             expires_in = int (TimeSpan(14,0,0,0).TotalSeconds)
           }
-        // ctx.Response.ContentType <- "application/json"
-        // ctx.Response.WriteAsync(JsonConvert.SerializeObject(resp)).Wait()
         json resp next ctx
+
+  let validator =
+    let encode (input:string) key =
+      use hmacSha = new HMACSHA256(key)
+      use stream = new MemoryStream(Encoding.UTF8.GetBytes(input))
+      Base64UrlEncoder.Encode(hmacSha.ComputeHash stream)
+    fun token (parameters:TokenValidationParameters) ->
+      let jwt = JwtSecurityToken(token)
+      let signKey = signingCredentials.Key :?> SymmetricSecurityKey
+
+      let encodedData = sprintf "%s.%s" jwt.EncodedHeader jwt.EncodedPayload
+      let signature = encode encodedData signKey.Key
+
+      if signature <> jwt.RawSignature then
+        raise (Exception("Token signature validation failed"))
+      jwt :> SecurityToken
+
 
   let webApp =
     choose [
@@ -133,6 +150,8 @@ module GiraffeExample.App
     cfg.TokenValidationParameters <- TokenValidationParameters (
       ValidIssuer = "GiraffeExample"
     )
+    cfg.TokenValidationParameters.SignatureValidator <- SignatureValidator(validator)
+    
 
   let configureServices (services : IServiceCollection) =
     services
